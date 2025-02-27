@@ -86,7 +86,6 @@ def analyze_dips_and_trade(data: List[BTCData], dip_fraction: float, profit_frac
         if allow_purchase and row.low <= dip_target:
             # Calculate how much BTC we can buy with our dollar amount
             purchase_amount = dollar_amount * math.log2(len(sales) + 2)
-            print(purchase_amount)
             btc_amount = purchase_amount / row.low
             purchases.append({
                 'date': row.date,
