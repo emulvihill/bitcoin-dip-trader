@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as csv from 'csv-parse';
 
-interface BTCData {
+export interface BTCData {
     unixTime: number;
     date: Date;
     symbol: string;
@@ -17,7 +17,7 @@ interface BTCData {
     weightedAverage: number;
 }
 
-interface Purchase {
+export interface Purchase {
     date: Date;
     price: number;
     allTimeHigh: number;
@@ -27,7 +27,7 @@ interface Purchase {
     fees: number;  // Add fees field
 }
 
-interface Sale {
+export interface Sale {
     date: Date;
     price: number;
     allTimeHigh: number;
@@ -37,16 +37,17 @@ interface Sale {
     fees: number;
 }
 
-interface DipTradingParameters {
+export interface DipTradingParameters {
     dipFraction: number;
     profitFraction: number;
     dollarAmount: number;
     sellFraction: number;
     feeRate: number;
-    printTransactions: boolean
+    printStats: boolean;
+    printTransactions: boolean;
 }
 
-interface DipTradingStatistics {
+export interface DipTradingStatistics {
     purchases: Purchase[];
     sales: Sale[];
     totalBtcBought: number;
@@ -82,7 +83,7 @@ function createBTCDataFromRow(row: any): BTCData {
     };
 }
 
-async function loadBtcData(filename: string): Promise<BTCData[]> {
+export async function loadBtcData(filename: string): Promise<BTCData[]> {
     return new Promise((resolve, reject) => {
         const data: BTCData[] = [];
         fs.createReadStream(filename)
@@ -95,7 +96,7 @@ async function loadBtcData(filename: string): Promise<BTCData[]> {
     });
 }
 
-async function analyzeDipsAndTrade(
+export async function analyzeDipsAndTrade(
     data: BTCData[],
     dipFraction: number,
     profitFraction: number,
@@ -177,7 +178,7 @@ async function analyzeDipsAndTrade(
     return [purchases, sales];
 }
 
-async function calculateProfitLoss(data: BTCData[], parameters: DipTradingParameters): Promise<DipTradingStatistics> {
+export async function calculateProfitLoss(data: BTCData[], parameters: DipTradingParameters): Promise<DipTradingStatistics> {
 
     const {dipFraction, profitFraction, dollarAmount, sellFraction, feeRate, printTransactions} = parameters;
 
@@ -200,26 +201,30 @@ async function calculateProfitLoss(data: BTCData[], parameters: DipTradingParame
         const totalReceived = sales.reduce((sum, s) => sum + s.dollarsReceived, 0);
         const totalSaleFees = sales.reduce((sum, s) => sum + s.fees, 0);
 
-        // Print results with fee information
-        console.log("\nTrading Summary:");
-        console.log(`Total purchases made: ${purchases.length}`);
-        console.log(`Total BTC bought: ${totalBtcBought.toFixed(8)}`);
-        console.log(`Total USD spent: $${totalSpent.toLocaleString()}`);
-        console.log(`Total purchase fees: $${totalPurchaseFees.toLocaleString()}`);
-
-        console.log(`\nTotal sales made: ${sales.length}`);
-        console.log(`Total BTC sold: ${totalBtcSold.toFixed(8)}`);
-        console.log(`Total USD received: $${totalReceived.toLocaleString()}`);
-        console.log(`Total sale fees: $${totalSaleFees.toLocaleString()}`);
-
         const totalFees = totalPurchaseFees + totalSaleFees;
-        console.log(`\nTotal fees paid: $${totalFees.toLocaleString()}`);
-
         const netProfitLoss = totalReceived - totalSpent - totalFees;
-        console.log(`Net profit/loss (after fees): $${netProfitLoss.toLocaleString()}`);
-
         const finalBtcHoldings = totalBtcBought - totalBtcSold;
-        console.log(`Remaining BTC holdings: ${finalBtcHoldings.toFixed(8)}`);
+
+        // Print results with fee information
+        if (parameters.printStats) {
+
+            console.log("\nTrading Summary:");
+            console.log(`Total purchases made: ${purchases.length}`);
+            console.log(`Total BTC bought: ${totalBtcBought.toFixed(8)}`);
+            console.log(`Total USD spent: $${totalSpent.toLocaleString()}`);
+            console.log(`Total purchase fees: $${totalPurchaseFees.toLocaleString()}`);
+
+            console.log(`\nTotal sales made: ${sales.length}`);
+            console.log(`Total BTC sold: ${totalBtcSold.toFixed(8)}`);
+            console.log(`Total USD received: $${totalReceived.toLocaleString()}`);
+            console.log(`Total sale fees: $${totalSaleFees.toLocaleString()}`);
+
+            console.log(`\nTotal fees paid: $${totalFees.toLocaleString()}`);
+
+            console.log(`Net profit/loss (after fees): $${netProfitLoss.toLocaleString()}`);
+
+            console.log(`Remaining BTC holdings: ${finalBtcHoldings.toFixed(8)}`);
+        }
 
         if (printTransactions) {
             // Print detailed trading history with fees
@@ -275,7 +280,8 @@ async function main() {
         profitFraction: 1.01,
         dollarAmount: 1000,
         sellFraction: 0.1,
-        feeRate: 0.006, // 0.6% fee rate
+        feeRate: 0.006,
+        printStats: true,
         printTransactions: false
     };
 
@@ -283,7 +289,7 @@ async function main() {
 
     const statistics = await calculateProfitLoss(data, parameters);
 
-    const { purchases, sales, ...filteredStats } = statistics;
+    const {purchases, sales, ...filteredStats} = statistics;
     console.log(filteredStats);
 }
 
