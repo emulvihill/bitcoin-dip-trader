@@ -34,7 +34,34 @@ interface Sale {
     btcSold: number;
     dollarsReceived: number;
     btcRemaining: number;
-    fees: number;  // Add fees field
+    fees: number;
+}
+
+interface DipTradingParameters {
+    dipFraction: number;
+    profitFraction: number;
+    dollarAmount: number;
+    sellFraction: number;
+    feeRate: number;
+    printTransactions: boolean
+}
+
+interface DipTradingStatistics {
+    purchases: Purchase[];
+    sales: Sale[];
+    totalBtcBought: number;
+    totalBtcSold: number;
+    totalSpent: number;
+    totalReceived: number;
+    totalPurchaseFees: number;
+    totalSaleFees: number;
+    totalFees: number;
+    netProfitLoss: number;
+}
+
+function roundTo(num: number, precision: number): number {
+    const factor = Math.pow(10, precision)
+    return Math.round(num * factor) / factor
 }
 
 function createBTCDataFromRow(row: any): BTCData {
@@ -55,6 +82,19 @@ function createBTCDataFromRow(row: any): BTCData {
     };
 }
 
+async function loadBtcData(filename: string): Promise<BTCData[]> {
+    return new Promise((resolve, reject) => {
+        const data: BTCData[] = [];
+        fs.createReadStream(filename)
+            .pipe(csv.parse({columns: true}))
+            .on('data', (row) => {
+                data.push(createBTCDataFromRow(row));
+            })
+            .on('end', () => resolve(data))
+            .on('error', (error) => reject(error));
+    });
+}
+
 async function analyzeDipsAndTrade(
     data: BTCData[],
     dipFraction: number,
@@ -62,7 +102,6 @@ async function analyzeDipsAndTrade(
     dollarAmount: number,
     sellFraction: number,
     feeRate: number
-
 ): Promise<[Purchase[], Sale[]]> {
     if (!(dipFraction > 0 && dipFraction < 1)) {
         throw new Error("Dip fraction must be between 0 and 1");
@@ -138,30 +177,11 @@ async function analyzeDipsAndTrade(
     return [purchases, sales];
 }
 
-async function loadBtcData(filename: string): Promise<BTCData[]> {
-    return new Promise((resolve, reject) => {
-        const data: BTCData[] = [];
-        fs.createReadStream(filename)
-            .pipe(csv.parse({columns: true}))
-            .on('data', (row) => {
-                data.push(createBTCDataFromRow(row));
-            })
-            .on('end', () => resolve(data))
-            .on('error', (error) => reject(error));
-    });
-}
+async function calculateProfitLoss(data: BTCData[], parameters: DipTradingParameters): Promise<DipTradingStatistics> {
 
-async function main() {
-    const filename = "Poloniex_BTCUSDT_1h.csv";
-    const dipFraction = 0.98;
-    const profitFraction = 1.01;
-    const dollarAmount = 1000;
-    const sellFraction = 0.1;
-    const feeRate = 0.006; // 0.6% fee rate
-    const printTransactions = false;
+    const {dipFraction, profitFraction, dollarAmount, sellFraction, feeRate, printTransactions} = parameters;
 
     try {
-        const data = await loadBtcData(filename);
         const [purchases, sales] = await analyzeDipsAndTrade(
             data,
             dipFraction,
@@ -229,9 +249,42 @@ async function main() {
             });
         }
 
+        return {
+            totalBtcBought: totalBtcBought,
+            totalBtcSold: totalBtcSold,
+            totalSpent: roundTo(totalSpent, 2),
+            totalReceived: roundTo(totalReceived, 2),
+            totalPurchaseFees: roundTo(totalPurchaseFees, 2),
+            totalSaleFees: roundTo(totalSaleFees, 2),
+            totalFees: roundTo(totalFees, 2),
+            netProfitLoss: roundTo(netProfitLoss, 2),
+            purchases: purchases,
+            sales: sales
+        };
+
     } catch (error) {
         console.error('An error occurred:', error);
     }
+}
+
+async function main() {
+    const filename = "Poloniex_BTCUSDT_1h.csv";
+
+    const parameters = {
+        dipFraction: 0.98,
+        profitFraction: 1.01,
+        dollarAmount: 1000,
+        sellFraction: 0.1,
+        feeRate: 0.006, // 0.6% fee rate
+        printTransactions: false
+    };
+
+    const data = await loadBtcData(filename);
+
+    const statistics = await calculateProfitLoss(data, parameters);
+
+    const { purchases, sales, ...filteredStats } = statistics;
+    console.log(filteredStats);
 }
 
 main().catch(console.error);
