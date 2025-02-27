@@ -24,6 +24,7 @@ interface Purchase {
     btcPurchased: number;
     dollarsSpent: number;
     totalBtcAfterPurchase: number;
+    fees: number;  // Add fees field
 }
 
 interface Sale {
@@ -33,6 +34,7 @@ interface Sale {
     btcSold: number;
     dollarsReceived: number;
     btcRemaining: number;
+    fees: number;  // Add fees field
 }
 
 function createBTCDataFromRow(row: any): BTCData {
@@ -58,7 +60,9 @@ async function analyzeDipsAndTrade(
     dipFraction: number,
     profitFraction: number,
     dollarAmount: number,
-    sellFraction: number
+    sellFraction: number,
+    feeRate: number
+
 ): Promise<[Purchase[], Sale[]]> {
     if (!(dipFraction > 0 && dipFraction < 1)) {
         throw new Error("Dip fraction must be between 0 and 1");
@@ -89,14 +93,18 @@ async function analyzeDipsAndTrade(
         if (readyToSell && currentBtcHoldings > 0 && row.high >= sellTarget) {
             // Sell specified fraction of current BTC holdings
             const btcToSell = currentBtcHoldings * sellFraction;
-            const dollarsReceived = btcToSell * row.high;
+            const grossDollarsReceived = btcToSell * row.high;
+            const fees = grossDollarsReceived * feeRate;
+            const netDollarsReceived = grossDollarsReceived - fees;
+
             sales.push({
                 date: row.date,
                 price: row.high,
                 allTimeHigh: allTimeHigh,
                 btcSold: btcToSell,
-                dollarsReceived: dollarsReceived,
-                btcRemaining: currentBtcHoldings - btcToSell
+                dollarsReceived: netDollarsReceived,
+                btcRemaining: currentBtcHoldings - btcToSell,
+                fees: fees
             });
             currentBtcHoldings -= btcToSell;
             readyToSell = false;
@@ -108,14 +116,17 @@ async function analyzeDipsAndTrade(
         if (allowPurchase && row.low <= dipTarget) {
             // Calculate how much BTC we can buy with our dollar amount
             const purchaseAmount = dollarAmount * Math.log2(sales.length + 2)
-            const btcAmount = purchaseAmount / row.low;
+            const fees = purchaseAmount * feeRate;
+            const netPurchaseAmount = purchaseAmount - fees;
+            const btcAmount = netPurchaseAmount / row.low;
             purchases.push({
                 date: row.date,
                 price: row.low,
                 allTimeHigh: allTimeHigh,
                 btcPurchased: btcAmount,
-                dollarsSpent: dollarAmount,
-                totalBtcAfterPurchase: currentBtcHoldings + btcAmount
+                dollarsSpent: netPurchaseAmount,
+                totalBtcAfterPurchase: currentBtcHoldings + btcAmount,
+                fees: fees
             });
             currentBtcHoldings += btcAmount;
             allowPurchase = false;
@@ -142,10 +153,11 @@ async function loadBtcData(filename: string): Promise<BTCData[]> {
 
 async function main() {
     const filename = "Poloniex_BTCUSDT_1h.csv";
-    const dipFraction = 0.98;  // Buy when price dips to 97.5% of ATH
-    const profitFraction = 1.01;  // Sell when price exceeds ATH by 2%
-    const dollarAmount = 1000;  // Spend $1000 on each dip
-    const sellFraction = 0.10;  // Sell 50% of holdings each time
+    const dipFraction = 0.98;
+    const profitFraction = 1.01;
+    const dollarAmount = 1000;
+    const sellFraction = 0.1;
+    const feeRate = 0.006; // 0.6% fee rate
     const printTransactions = false;
 
     try {
@@ -155,40 +167,51 @@ async function main() {
             dipFraction,
             profitFraction,
             dollarAmount,
-            sellFraction
+            sellFraction,
+            feeRate
         );
 
-        // Print purchase results
+        // Calculate totals including fees
         const totalBtcBought = purchases.reduce((sum, p) => sum + p.btcPurchased, 0);
         const totalSpent = purchases.reduce((sum, p) => sum + p.dollarsSpent, 0);
+        const totalPurchaseFees = purchases.reduce((sum, p) => sum + p.fees, 0);
 
-        console.log(`\nTotal purchases made: ${purchases.length}`);
-        console.log(`Total BTC bought: ${totalBtcBought.toFixed(8)}`);
-        console.log(`Total USD spent: $${totalSpent.toLocaleString()}`);
-
-        // Print sale results
         const totalBtcSold = sales.reduce((sum, s) => sum + s.btcSold, 0);
         const totalReceived = sales.reduce((sum, s) => sum + s.dollarsReceived, 0);
+        const totalSaleFees = sales.reduce((sum, s) => sum + s.fees, 0);
+
+        // Print results with fee information
+        console.log("\nTrading Summary:");
+        console.log(`Total purchases made: ${purchases.length}`);
+        console.log(`Total BTC bought: ${totalBtcBought.toFixed(8)}`);
+        console.log(`Total USD spent: $${totalSpent.toLocaleString()}`);
+        console.log(`Total purchase fees: $${totalPurchaseFees.toLocaleString()}`);
 
         console.log(`\nTotal sales made: ${sales.length}`);
         console.log(`Total BTC sold: ${totalBtcSold.toFixed(8)}`);
         console.log(`Total USD received: $${totalReceived.toLocaleString()}`);
-        console.log(`Net profit/loss: $${(totalReceived - totalSpent).toLocaleString()}`);
+        console.log(`Total sale fees: $${totalSaleFees.toLocaleString()}`);
 
-        // Calculate remaining BTC holdings
+        const totalFees = totalPurchaseFees + totalSaleFees;
+        console.log(`\nTotal fees paid: $${totalFees.toLocaleString()}`);
+
+        const netProfitLoss = totalReceived - totalSpent - totalFees;
+        console.log(`Net profit/loss (after fees): $${netProfitLoss.toLocaleString()}`);
+
         const finalBtcHoldings = totalBtcBought - totalBtcSold;
         console.log(`Remaining BTC holdings: ${finalBtcHoldings.toFixed(8)}`);
 
         if (printTransactions) {
-
-            // Print trading history
-            console.log("\nTrading history:");
+            // Print detailed trading history with fees
+            console.log("\nDetailed Trading History:");
             console.log("\nPurchases:");
             purchases.forEach(purchase => {
                 console.log(
                     `BUY  - Date: ${purchase.date.toISOString()}, ` +
                     `Price: $${purchase.price.toLocaleString()}, ` +
                     `BTC: ${purchase.btcPurchased.toFixed(8)}, ` +
+                    `Spent: $${purchase.dollarsSpent.toLocaleString()}, ` +
+                    `Fees: $${purchase.fees.toLocaleString()}, ` +
                     `Total BTC: ${purchase.totalBtcAfterPurchase.toFixed(8)}`
                 );
             });
@@ -199,10 +222,13 @@ async function main() {
                     `SELL - Date: ${sale.date.toISOString()}, ` +
                     `Price: $${sale.price.toLocaleString()}, ` +
                     `BTC Sold: ${sale.btcSold.toFixed(8)}, ` +
+                    `Received: $${sale.dollarsReceived.toLocaleString()}, ` +
+                    `Fees: $${sale.fees.toLocaleString()}, ` +
                     `BTC Remaining: ${sale.btcRemaining.toFixed(8)}`
                 );
             });
         }
+
     } catch (error) {
         console.error('An error occurred:', error);
     }
