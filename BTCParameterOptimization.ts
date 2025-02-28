@@ -20,9 +20,9 @@ interface FixedParams {
 
 // params to optimize
 const dynamicParams: DynamicParams = {
-    dipFraction: 0.95,
+    dipFraction: 0.97,
     profitFraction: 1.05,
-    sellFraction: 0.5,
+    sellFraction: 0.25,
 }
 
 // fixed params
@@ -35,10 +35,14 @@ const fixedParams: FixedParams = {
 
 async function optimizeParameters(
     data: BTCData[],
-    learningRate: number = 0.001,
-    maxIterations: number = 1000,
-    convergenceThreshold: number = 0.01
+    learningRate: number,
+    maxIterations: number,
+    convergenceThreshold: number
 ): Promise<OptimizationResult> {
+
+    if (!learningRate || !maxIterations || !convergenceThreshold) {
+        throw new Error("Learning rate, max iterations, and convergence threshold must be specified");
+    }
 
     // Initial parameters
     let currentParams: DipTradingParameters = {...dynamicParams, ...fixedParams};

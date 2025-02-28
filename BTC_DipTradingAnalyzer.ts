@@ -104,13 +104,14 @@ export async function analyzeDipsAndTrade(
     sellFraction: number,
     feeRate: number
 ): Promise<[Purchase[], Sale[]]> {
+
     if (!(dipFraction > 0 && dipFraction < 1)) {
-        throw new Error("Dip fraction must be between 0 and 1");
+        throw new Error("Dip fraction must be strictly between 0 and 1");
     }
     if (profitFraction <= 1) {
         throw new Error("Profit fraction must be greater than 1");
     }
-    if (!(sellFraction > 0 && sellFraction <= 1)) {
+    if (!(sellFraction >= 0 && sellFraction <= 1)) {
         throw new Error("Sell fraction must be between 0 and 1");
     }
 
@@ -118,7 +119,7 @@ export async function analyzeDipsAndTrade(
     const sales: Sale[] = [];
     let allTimeHigh = 0;
     let currentBtcHoldings = 0;
-    let allowPurchase = false;
+    let allowPurchase = true;
     let readyToSell = false;
     let sellTarget = Number.MAX_VALUE;
 
@@ -126,7 +127,6 @@ export async function analyzeDipsAndTrade(
         // Update all-time high if we see a new one
         if (row.high > allTimeHigh) {
             allTimeHigh = row.high;
-            allowPurchase = true;
         }
 
         // Check for selling conditions first
@@ -180,7 +180,7 @@ export async function analyzeDipsAndTrade(
 
 export async function calculateProfitLoss(data: BTCData[], parameters: DipTradingParameters): Promise<DipTradingStatistics> {
 
-    const {dipFraction, profitFraction, dollarAmount, sellFraction, feeRate, printTransactions} = parameters;
+    const {dipFraction, profitFraction, dollarAmount, sellFraction, feeRate, printStats, printTransactions} = parameters;
 
     try {
         const [purchases, sales] = await analyzeDipsAndTrade(
@@ -206,7 +206,7 @@ export async function calculateProfitLoss(data: BTCData[], parameters: DipTradin
         const finalBtcHoldings = totalBtcBought - totalBtcSold;
 
         // Print results with fee information
-        if (parameters.printStats) {
+        if (printStats) {
 
             console.log("\nTrading Summary:");
             console.log(`Total purchases made: ${purchases.length}`);
