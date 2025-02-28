@@ -24,7 +24,7 @@ export interface Purchase {
     btcPurchased: number;
     dollarsSpent: number;
     totalBtcAfterPurchase: number;
-    fees: number;  // Add fees field
+    fees: number;
 }
 
 export interface Sale {

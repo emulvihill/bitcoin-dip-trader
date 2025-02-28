@@ -4,6 +4,7 @@ interface OptimizationResult extends DipTradingParameters {
     netProfitLoss: number;
     iterations: number;
 }
+
 interface DynamicParams {
     dipFraction: number;
     profitFraction: number;
@@ -34,9 +35,9 @@ const fixedParams: FixedParams = {
 
 async function optimizeParameters(
     data: BTCData[],
-    learningRate: number = 0.0001,
+    learningRate: number = 0.001,
     maxIterations: number = 1000,
-    convergenceThreshold: number = 0.001
+    convergenceThreshold: number = 0.01
 ): Promise<OptimizationResult> {
 
     // Initial parameters
@@ -64,7 +65,7 @@ async function optimizeParameters(
         }
 
         // Calculate gradients using finite differences
-        const epsilon = 0.0001;
+        const epsilon = 0.01; // NB: Calcs can blow up if epsilon is too large
         const gradients = {
             dipFraction: 0,
             profitFraction: 0,
@@ -82,7 +83,7 @@ async function optimizeParameters(
             dipFraction: currentParams.dipFraction - epsilon
         });
 
-        gradients.dipFraction = (dipUp - dipDown) / (stats.netProfitLoss * 2 * epsilon);
+        gradients.dipFraction = (dipUp - dipDown) / (2 * epsilon);
 
         // Calculate gradient for profitFraction
         const profitUp = await calculateProfitForParams(data, {
@@ -95,7 +96,7 @@ async function optimizeParameters(
             profitFraction: Math.max(1.0001, currentParams.profitFraction - epsilon)
         });
 
-        gradients.profitFraction = (profitUp - profitDown) / (stats.netProfitLoss * 2 * epsilon);
+        gradients.profitFraction = (profitUp - profitDown) / (2 * epsilon);
 
         // Calculate gradient for sellFraction
         const sellUp = await calculateProfitForParams(data, {
@@ -108,33 +109,47 @@ async function optimizeParameters(
             sellFraction: Math.max(0.0001, currentParams.sellFraction - epsilon)
         });
 
-        gradients.sellFraction = (sellUp - sellDown) / (stats.netProfitLoss * 2 * epsilon);
+        gradients.sellFraction = (sellUp - sellDown) / (2 * epsilon);
 
-        // Update parameters using gradient descent
+        // Normalize gradients
+        const gradientNorm = Math.sqrt(
+            gradients.dipFraction * gradients.dipFraction +
+            gradients.profitFraction * gradients.profitFraction +
+            gradients.sellFraction * gradients.sellFraction
+        );
+
+        // Avoid division by zero
+        const normalizedGradients = gradientNorm > 1e-8 ? {
+            dipFraction: gradients.dipFraction / gradientNorm,
+            profitFraction: gradients.profitFraction / gradientNorm,
+            sellFraction: gradients.sellFraction / gradientNorm
+        } : gradients;
+
+        // Update parameters using normalized gradients
         currentParams = {
+            ...fixedParams,
             dipFraction: clamp(
-                currentParams.dipFraction + learningRate * gradients.dipFraction,
+                currentParams.dipFraction + learningRate * normalizedGradients.dipFraction,
                 0.001,
                 0.999
             ),
             profitFraction: clamp(
-                currentParams.profitFraction + learningRate * gradients.profitFraction,
+                currentParams.profitFraction + learningRate * normalizedGradients.profitFraction,
                 1.001,
                 2.0
             ),
             sellFraction: clamp(
-                currentParams.sellFraction + learningRate * gradients.sellFraction,
-                0.1,
+                currentParams.sellFraction + learningRate * normalizedGradients.sellFraction,
+                0.0001,
                 1.0
-            ),
-            ...fixedParams
+            )
         };
 
         previousProfit = currentProfit;
         iteration++;
 
         // Log progress every 100 iterations
-        if (iteration % 10 === 0) {
+        if (iteration % Math.floor(maxIterations/10) === 0) {
             console.log(`Iteration ${iteration}: Profit = ${currentProfit}`);
             console.log(`Parameters: `, currentParams);
         }
@@ -175,7 +190,7 @@ async function main() {
     const optimizedParams = await optimizeParameters(
         data,
         0.0001, // learningRate
-        1000,   // maxIterations
+        10000,   // maxIterations
         0.001   // convergenceThreshold
     );
 
